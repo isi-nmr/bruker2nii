@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="JBruker">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/JBruker.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="NIfTI-MRS">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/../../forBern/NIfTI-MRS/out/artifacts/NIfTI_MRS_jar/NIfTI-MRS.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
