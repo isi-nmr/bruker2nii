@@ -1,14 +1,7 @@
 import bruker_plugin_lib.Bruker;
 import bruker_plugin_lib.DataBruker;
 import com.ericbarnhill.niftijio.tools.IndexIterator;
-import com.ericbarnhill.niftijio.NiftiHeader;
-import com.ericbarnhill.niftijio.NiftiVolume;
 import org.apache.commons.lang3.ArrayUtils;
-import org.apache.commons.math3.complex.Complex;
-import org.apache.commons.math3.transform.DftNormalization;
-import org.apache.commons.math3.transform.FastFourierTransformer;
-import org.apache.commons.math3.transform.TransformType;
-import org.apache.commons.math3.transform.TransformUtils;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.factory.Nd4j;
 import org.nd4j.linalg.indexing.INDArrayIndex;
@@ -28,8 +21,7 @@ public class Bruker2nii {
     String pathNii;
     Bruker bruker;
     DataBruker dataBruker;
-    NiftiHeader niftiHeader;
-    private NiftiVolume volumeW;
+    NiftiMRS niftiMRS;
 
     public Bruker2nii(String pathBruker) {
         this.pathBruker = pathBruker;
@@ -48,224 +40,332 @@ public class Bruker2nii {
 
     public boolean convert(String pathNii, char d, boolean b, boolean b1) {
         this.pathNii = pathNii;
-        if (!bruker.isRaw()) {
-            if (isSVS()) {
-                int sigLen = bruker.getJcampdx().getVisu_pars().getINDArray("VisuAcqSize").getInt(0);
-                if (bruker.isIR()) {
+        if (isSVS()) {
+            boolean squeez = false;
+            int brukerLength = bruker.getDims().length;
+            if (bruker.getDims()[brukerLength-1] == 1)
+                squeez = true;
+            if (squeez)
+                brukerLength -=1;
 
-                    double[][] data2nii = new double[2][sigLen];
-                    data2nii[0] = dataBruker.real.getColumn(0).toDoubleVector();
-                    data2nii[1] = dataBruker.imag.getColumn(0).toDoubleVector();
-                    niftiHeader = new NiftiHeader(1, 1, 1, (int) data2nii[0].length);
-                    niftiHeader.datatype = NiftiHeader.NIFTI_TYPE_COMPLEX64;
-                    volumeW = new NiftiVolume(niftiHeader);
-                    INDArray PVM_VoxArrSize = bruker.getJcampdx().getMethod().getINDArray("PVM_VoxArrSize");
-                    for (int i = 1; i < 4; i++) {
-                        volumeW.header.pixdim[i] = PVM_VoxArrSize.getFloat(i - 1);
-                    }
-                    if (d == 'f') {
-                        volumeW.header.pixdim[4] = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreExtent").getFloat(0);
-                        volumeW.header.xyz_unit_code = NiftiHeader.NIFTI_UNITS_MM;
-                        volumeW.header.t_unit_code = NiftiHeader.NIFTI_UNITS_PPM;
-                        for (int i = 0; i < data2nii[0].length; i++) {
-                            for (int j = 0; j < 2; j++) {
-//                                volumeW.data.set(j, 0, 0, i, data2nii[j][i]);
-                            }
-                        }
-                    } else if (d == 't') {
-                        FastFourierTransformer fft = new FastFourierTransformer(DftNormalization.STANDARD);
-                        Complex[] complexdata = TransformUtils.createComplexArray(data2nii);
-                        Complex[] timedata = fft.transform(complexdata, TransformType.INVERSE);
-                        data2nii = TransformUtils.createRealImaginaryArray(timedata);
-                        volumeW.header.xyz_unit_code = NiftiHeader.NIFTI_UNITS_MM;
-                        volumeW.header.t_unit_code = NiftiHeader.NIFTI_UNITS_SEC;
-                        volumeW.header.pixdim[4] = (float) (1 / bruker.getJcampdx().getSW(4000));
-                        for (int i = 0; i < data2nii[0].length; i++) {
-                            for (int j = 0; j < 2; j++) {
-//                                volumeW.data.set(j, 0, 0, i, data2nii[j][i]);
-                            }
-                        }
-                    }
-                } else {
-                    double[] data2nii = new double[sigLen];
-                    data2nii = dataBruker.real.getColumn(0).toDoubleVector();
-//                data2nii[1]  = dataBruker.imag.getColumn(0).toDoubleVector();
-                    niftiHeader = new NiftiHeader(1, 1, 1, (int) data2nii.length);
-                    niftiHeader.datatype = NiftiHeader.NIFTI_TYPE_FLOAT64;
-                    volumeW = new NiftiVolume(niftiHeader);
-                    INDArray PVM_VoxArrSize = bruker.getJcampdx().getMethod().getINDArray("PVM_VoxArrSize");
-                    for (int i = 1; i < 4; i++) {
-                        volumeW.header.pixdim[i] = PVM_VoxArrSize.getFloat(i - 1);
-                    }
-                    volumeW.header.pixdim[4] = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreExtent").getFloat(0)
-                            / bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreSize").getFloat(0);
-                    for (int i = 0; i < data2nii.length; i++) {
-//                        volumeW.data.set(0, 0, 0, i, data2nii[i]);
-                    }
+            int[] niftishape = new int[3 + brukerLength];
+            int[] shape = Arrays.stream(bruker.getDims()).mapToInt(i -> (int) i).toArray();
+            System.arraycopy(new int[]{1, 1, 1}, 0, niftishape, 0, 3);
+            if (squeez)
+                System.arraycopy(shape, 0, niftishape, 3, bruker.getDims().length-1);
+            else System.arraycopy(shape, 0, niftishape, 3, bruker.getDims().length);
 
-                }
-                volumeW.header.scl_slope = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreDataSlope").getFloat(0);
-                volumeW.header.scl_inter = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreDataOffs").getFloat(0);
+            niftiMRS = new NiftiMRS(niftishape);
 
-                volumeW.header.cal_max = bruker.getJcampdx().getVisu_pars().getFloat("VisuCoreDataMax");
-                volumeW.header.cal_min = bruker.getJcampdx().getVisu_pars().getFloat("VisuCoreDataMin");
-                volumeW.header.descrip = new StringBuffer("Converted by JBruker2nii API");
-// to do affine matrix + 1r+1d + time
+            INDArray PVM_VoxArrSize = bruker.getJcampdx().getMethod().getINDArray("PVM_VoxArrSize");
+            for (int i = 1; i < 4; i++) { // what is 4?
+                niftiMRS.getNifti().header.pixdim[i] = PVM_VoxArrSize.getFloat(i - 1);
+            }
+            // here pixdim 5 to 7 must be set
+            niftiMRS.getNifti().header.pixdim[4] = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreExtent").getFloat(0)
+                    / bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreSize").getFloat(0);
+            ArrayList<int[]> idcs;
+            if (squeez)
+                idcs = new IndexIterator().iterate(Arrays.copyOfRange(shape, 1, shape.length-1));
+            else idcs = new IndexIterator().iterate(Arrays.copyOfRange(shape, 1, shape.length));
 
-            } else {
-
-                // if ( 3d and 4d )
-                double[][][] CSI2nii = new double[(int) bruker.getDims()[1]][(int) bruker.getDims()[2]][(int) bruker.getDims()[0]];
-                NiftiHeader header = new NiftiHeader((int) bruker.getDims()[1], (int) bruker.getDims()[1], 1, (int) bruker.getDims()[0]);
-                header.datatype = NiftiHeader.NIFTI_TYPE_COMPLEX64;
-                volumeW = new NiftiVolume(header);
-
-                INDArray VisuCoreExtent = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreExtent");
-                INDArray VisuCoreSize = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreSize");
-
-                for (int i = 1; i < 3; i++) {
-                    volumeW.header.pixdim[i] = VisuCoreExtent.getFloat(i) / VisuCoreSize.getFloat(i);
-                }
-                volumeW.header.pixdim[3] = bruker.getJcampdx().getVisu_pars().getFloat("VisuCoreFrameThickness");
-                volumeW.header.pixdim[4] = VisuCoreExtent.getFloat(0) / VisuCoreSize.getFloat(0);
-                ArrayList VisuCoreUnits = bruker.getJcampdx().getVisu_pars().getArrayList("VisuCoreUnits");
-
-                if (VisuCoreUnits.contains("[ppm]"))
-                    volumeW.header.t_unit_code = NiftiHeader.NIFTI_UNITS_PPM;
-                if (VisuCoreUnits.contains("mm"))
-                    volumeW.header.xyz_unit_code = NiftiHeader.NIFTI_UNITS_MM;
-                else if (VisuCoreUnits.contains("m"))
-                    volumeW.header.xyz_unit_code = NiftiHeader.NIFTI_UNITS_METER;
-
-
-                volumeW.header.intent_code = 2001; // each voxel has time_series
-                double[] tempR;
-                double[] tempI;
-                for (int i = 0; i < bruker.getDims()[1]; i++) {
-                    for (int j = 0; j < bruker.getDims()[2]; j=j+1) {
-                        INDArrayIndex[] indx = {NDArrayIndex.all(), NDArrayIndex.point(i), NDArrayIndex.point(j)};
-                        tempR = dataBruker.real.get(indx).toDoubleVector();
-
-                        for (int t = 0; t < bruker.getDims()[0]; t++) {
-//                            volumeW.data.set(j, i, 0, t, tempR[t]);
-                        }
-
-                    }
+            for (int[] idc : idcs) {
+                int[] idx = new int[niftishape.length];
+                System.arraycopy(idc, 0, idx, 4, idc.length);
+                for (int i = 0; i < shape[0]; i++) {
+                    idx[3] = i;
+                    idx[0] = 0;
+                    int[] dataidx = Arrays.copyOfRange(idx, 3, idx.length);
+                    niftiMRS.getNifti().data.set(idx, dataBruker.real.getFloat(dataidx));
+                    idx[0] = 1;
+                    niftiMRS.getNifti().data.set(idx, dataBruker.imag.getFloat(dataidx));
                 }
             }
-        } else if (bruker.isRaw()) {
-            if (isSVS()) {
-                int sigLen = bruker.getJcampdx().getVisu_pars().getINDArray("VisuAcqSize").getInt(0);
-                double[] data2nii = new double[sigLen];
-//                    data2nii = dataBruker.real.getColumn(0).toDoubleVector();
-//                    data2nii[1]  = dataBruker.imag.getColumn(0).toDoubleVector();
-//                    new NiftiHeader()
-                int[] niftishape = new int[3 + bruker.getDims().length];
-                int[] shape = Arrays.stream(bruker.getDims()).mapToInt(i -> (int) i).toArray();
-                System.arraycopy(new int[]{1, 1, 1}, 0, niftishape, 0, 3);
-                System.arraycopy(shape, 0, niftishape, 3, bruker.getDims().length);
-//
-//
-                NiftiMRS niftiMRS = new NiftiMRS(niftishape);
-//                niftiHeader = new NiftiHeader(niftishape);
-//                niftiHeader.datatype = NiftiHeader.NIFTI_TYPE_COMPLEX64;
-//                volumeW = new NiftiVolume(niftiHeader);
-                INDArray PVM_VoxArrSize = bruker.getJcampdx().getMethod().getINDArray("PVM_VoxArrSize");
-                for (int i = 1; i < 4; i++) {
-                    niftiMRS.getNifti().header.pixdim[i] = PVM_VoxArrSize.getFloat(i - 1);
-                }
-                // here pixdim 5 to 7 must be set
-                niftiMRS.getNifti().header.pixdim[4] = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreExtent").getFloat(0)
-                        / bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreSize").getFloat(0);
-                ArrayList<int[]> idcs = new IndexIterator().iterate(Arrays.copyOfRange(shape, 1, shape.length));
-                for (int[] idc : idcs) {
-                    int[] idx = new int[niftishape.length];
-                    System.arraycopy(idc, 0, idx, 4, idc.length);
-                    for (int i = 0; i < shape[0]; i++) {
-                        idx[3] = i;
-                        idx[0] = 0;
-                        int[] dataidx = Arrays.copyOfRange(idx, 3, idx.length);
-                        niftiMRS.getNifti().data.set(idx, dataBruker.real.getFloat(dataidx));
-                        idx[0] = 1;
-                        niftiMRS.getNifti().data.set(idx, dataBruker.imag.getFloat(dataidx));
-                    }
-                }
-                String NUCLEUS = bruker.getJcampdx().getAcqp().getString("NUCLEUS");
-                if(NUCLEUS.contains("1H"))
-                niftiMRS.getJson().ResonantNucleus = new String[] {Nucleus.N_1H.toString()};
-                Float TrnsFreq = bruker.getJcampdx().getAcqp().getFloat("SFO1");
-                niftiMRS.getJson().SpectrometerFrequency = new Double[] {Double.valueOf(TrnsFreq)};
-//                volumeW.header.scl_slope = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreDataSlope").getFloat(0);
-//                volumeW.header.scl_inter = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreDataOffs").getFloat(0);
+            String NUCLEUS = bruker.getJcampdx().getAcqp().getString("NUCLEUS");
+            if (NUCLEUS.contains("1H"))
+                niftiMRS.getJson().ResonantNucleus = new String[]{Nucleus.N_1H.toString()};
+            Float TrnsFreq = bruker.getJcampdx().getAcqp().getFloat("SFO1");
+            niftiMRS.getJson().SpectrometerFrequency = new Double[]{Double.valueOf(TrnsFreq)};
 
-//                volumeW.header.cal_max = bruker.getJcampdx().getVisu_pars().getFloat("VisuCoreDataMax");
-//                volumeW.header.cal_min = bruker.getJcampdx().getVisu_pars().getFloat("VisuCoreDataMin");
-                niftiMRS.getJson().setDim_5(DIM_KEYS.DIM_MEAS);
+            if (!squeez) { // what is it really!? avg or coil
+            niftiMRS.getJson().setDim_5(DIM_KEYS.DIM_MEAS);
                 niftiMRS.getJson().setDim_5_info("repetition");
                 niftiMRS.getJson().setDim_5_header(TAGS.EchoTime, Collections.singletonList(bruker.getJcampdx().getTE(10000)));
                 niftiMRS.getJson().setDim_5_header(TAGS.RepetitionTime, Collections.singletonList(bruker.getJcampdx().getTR(10000)));
-
-                niftiMRS.getNifti().header.descrip = new StringBuffer("Converted by JBruker2nii API");
-                try {
-                    niftiMRS.write(pathNii, b, b1);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-// to do affine matrix + 1r+1d + time
-            } else {
-                // if ( 3d and 4d )
-                double[][][] CSI2nii = new double[(int) bruker.getDims()[1]][(int) bruker.getDims()[2]][(int) bruker.getDims()[0]];
-                NiftiHeader header = new NiftiHeader((int) bruker.getDims()[1], (int) bruker.getDims()[1], 1, (int) bruker.getDims()[0]);
-                header.datatype = NiftiHeader.NIFTI_TYPE_COMPLEX64;
-                volumeW = new NiftiVolume(header);
-
-                INDArray VisuCoreExtent = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreExtent");
-                INDArray VisuCoreSize = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreSize");
-
-                for (int i = 1; i < 3; i++) {
-                    volumeW.header.pixdim[i] = VisuCoreExtent.getFloat(i) / VisuCoreSize.getFloat(i);
-                }
-                volumeW.header.pixdim[3] = bruker.getJcampdx().getVisu_pars().getFloat("VisuCoreFrameThickness");
-                volumeW.header.pixdim[4] = VisuCoreExtent.getFloat(0) / VisuCoreSize.getFloat(0);
-                ArrayList VisuCoreUnits = bruker.getJcampdx().getVisu_pars().getArrayList("VisuCoreUnits");
-
-                if (VisuCoreUnits.contains("[ppm]"))
-                    volumeW.header.t_unit_code = NiftiHeader.NIFTI_UNITS_PPM;
-                if (VisuCoreUnits.contains("mm"))
-                    volumeW.header.xyz_unit_code = NiftiHeader.NIFTI_UNITS_MM;
-                else if (VisuCoreUnits.contains("m"))
-                    volumeW.header.xyz_unit_code = NiftiHeader.NIFTI_UNITS_METER;
-
-
-                volumeW.header.intent_code = 2001; // each voxel has time_series
-                double[] tempR;
-                double[] tempI;
-                for (int i = 0; i < bruker.getDims()[1]; i++) {
-                    for (int j = 0; j < 2*bruker.getDims()[2]; j=j+2) {
-                        INDArrayIndex[] indx = {NDArrayIndex.all(), NDArrayIndex.point(i), NDArrayIndex.point(j/2)};
-                        tempR = dataBruker.real.get(indx).toDoubleVector();
-                        tempI = dataBruker.imag.get(indx).toDoubleVector();
-                        for (int t = 0; t < bruker.getDims()[0]; t++) {
-//                            volumeW.data.set(j, i, 0, t, tempR[t]);
-//                            volumeW.data.set(j+1, i, 0, t, tempI[t]);
-                        }
-
-                    }
-                }
-
-
             }
+            niftiMRS.getNifti().header.descrip = new StringBuffer("Converted by JBruker2nii API");
         }
 
+        try {
+            niftiMRS.write(pathNii, b, b1);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
-//        try {
-////            volumeW.write(pathNii);
-////            niftiMRS.write(pathNii, false, false);
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
         return true;
-    }
+
+
+
+
+
+
+//        if (!bruker.isRaw()) {
+//            if (isSVS()) {
+////                int sigLen = bruker.getJcampdx().getVisu_pars().getINDArray("VisuAcqSize").getInt(0);
+//                if (bruker.isIR()) {
+//                    int sigLen = bruker.getJcampdx().getVisu_pars().getINDArray("VisuAcqSize").getInt(0);
+//                    double[] data2nii = new double[sigLen];
+//                    int[] niftishape = new int[3 + bruker.getDims().length];
+//                    int[] shape = Arrays.stream(bruker.getDims()).mapToInt(i -> (int) i).toArray();
+//                    System.arraycopy(new int[]{1, 1, 1}, 0, niftishape, 0, 3);
+//                    System.arraycopy(shape, 0, niftishape, 3, bruker.getDims().length);
+//
+//                    niftiMRS = new NiftiMRS(niftishape);
+//                    INDArray PVM_VoxArrSize = bruker.getJcampdx().getMethod().getINDArray("PVM_VoxArrSize");
+//                    for (int i = 1; i < 4; i++) {
+//                        niftiMRS.getNifti().header.pixdim[i] = PVM_VoxArrSize.getFloat(i - 1);
+//                    }
+//                    // here pixdim 5 to 7 must be set
+//                    niftiMRS.getNifti().header.pixdim[4] = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreExtent").getFloat(0)
+//                            / bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreSize").getFloat(0);
+//                    ArrayList<int[]> idcs = new IndexIterator().iterate(Arrays.copyOfRange(shape, 1, shape.length));
+//                    for (int[] idc : idcs) {
+//                        int[] idx = new int[niftishape.length];
+//                        System.arraycopy(idc, 0, idx, 4, idc.length);
+//                        for (int i = 0; i < shape[0]; i++) {
+//                            idx[3] = i;
+//                            idx[0] = 0;
+//                            int[] dataidx = Arrays.copyOfRange(idx, 3, idx.length);
+//                            niftiMRS.getNifti().data.set(idx, dataBruker.real.getFloat(dataidx));
+//                            idx[0] = 1;
+//                            niftiMRS.getNifti().data.set(idx, dataBruker.imag.getFloat(dataidx));
+//                        }
+//                    }
+////                    double[][] data2nii = new double[2][sigLen];
+////                    data2nii[0] = dataBruker.real.getColumn(0).toDoubleVector();
+////                    data2nii[1] = dataBruker.imag.getColumn(0).toDoubleVector();
+////                    // check the possibility of repitted measure!
+////                    int[] niftishape = new int[]{1, 1, 1, (int) data2nii[0].length};
+////                    niftiMRS = new NiftiMRS(niftishape);
+////                    INDArray PVM_VoxArrSize = bruker.getJcampdx().getMethod().getINDArray("PVM_VoxArrSize");
+////                    for (int i = 1; i < 4; i++) {
+////                        niftiMRS.getNifti().header.pixdim[i] = PVM_VoxArrSize.getFloat(i - 1);
+////                    }
+////                    if (d == 'f') {
+////                        niftiMRS.getNifti().header.pixdim[4] = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreExtent").getFloat(0);
+////                        niftiMRS.getNifti().header.xyz_unit_code = NiftiHeader.NIFTI_UNITS_MM;
+////                        niftiMRS.getNifti().header.t_unit_code = NiftiHeader.NIFTI_UNITS_PPM;
+//////                        for (int i = 0; i < data2nii[0].length; i++) {
+//////                            for (int j = 0; j < 2; j++) {
+////////                                volumeW.data.set(j, 0, 0, i, data2nii[j][i]);
+//////                            }
+//////                        }
+////                        int[] shape = Arrays.stream(bruker.getDims()).mapToInt(i -> (int) i).toArray();
+////                        ArrayList<int[]> idcs = new IndexIterator().iterate(Arrays.copyOfRange(shape, 1, shape.length));
+////
+////                        for (int[] idc : idcs) {
+////                            int[] idx = new int[niftishape.length];
+////                            System.arraycopy(idc, 0, idx, 4, idc.length);
+////                            for (int i = 0; i < shape[0]; i++) {
+////                                idx[3] = i;
+////                                idx[0] = 0;
+////                                int[] dataidx = Arrays.copyOfRange(idx, 3, idx.length);
+////                                niftiMRS.getNifti().data.set(idx, dataBruker.real.getFloat(dataidx));
+////                                idx[0] = 1;
+////                                niftiMRS.getNifti().data.set(idx, dataBruker.imag.getFloat(dataidx));
+////                            }
+////                        }
+//                        String NUCLEUS = bruker.getJcampdx().getAcqp().getString("NUCLEUS");
+//                        if (NUCLEUS.contains("1H"))
+//                            niftiMRS.getJson().ResonantNucleus = new String[]{Nucleus.N_1H.toString()};
+//                        Float TrnsFreq = bruker.getJcampdx().getAcqp().getFloat("SFO1");
+//                        niftiMRS.getJson().SpectrometerFrequency = new Double[]{Double.valueOf(TrnsFreq)};
+////                volumeW.header.scl_slope = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreDataSlope").getFloat(0);
+////                volumeW.header.scl_inter = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreDataOffs").getFloat(0);
+//
+////                volumeW.header.cal_max = bruker.getJcampdx().getVisu_pars().getFloat("VisuCoreDataMax");
+////                volumeW.header.cal_min = bruker.getJcampdx().getVisu_pars().getFloat("VisuCoreDataMin");
+//                        niftiMRS.getJson().setDim_5(DIM_KEYS.DIM_MEAS);
+//                        niftiMRS.getJson().setDim_5_info("repetition");
+//                        niftiMRS.getJson().setDim_5_header(TAGS.EchoTime, Collections.singletonList(bruker.getJcampdx().getTE(10000)));
+//                        niftiMRS.getJson().setDim_5_header(TAGS.RepetitionTime, Collections.singletonList(bruker.getJcampdx().getTR(10000)));
+//
+//                        niftiMRS.getNifti().header.descrip = new StringBuffer("Converted by JBruker2nii API");
+//                    }
+////                    else if (d == 't') {
+////                        FastFourierTransformer fft = new FastFourierTransformer(DftNormalization.STANDARD);
+////                        Complex[] complexdata = TransformUtils.createComplexArray(data2nii);
+////                        Complex[] timedata = fft.transform(complexdata, TransformType.INVERSE);
+////                        data2nii = TransformUtils.createRealImaginaryArray(timedata);
+////                        niftiMRS.getNifti().header.xyz_unit_code = NiftiHeader.NIFTI_UNITS_MM;
+////                        niftiMRS.getNifti().header.t_unit_code = NiftiHeader.NIFTI_UNITS_SEC;
+////                        niftiMRS.getNifti().header.pixdim[4] = (float) (1 / bruker.getJcampdx().getSW(4000));
+////                        for (int i = 0; i < data2nii[0].length; i++) {
+////                            for (int j = 0; j < 2; j++) {
+////                                niftiMRS.getNifti().data.set(j, 0, 0, i, data2nii[j][i]);
+////                            }
+////                        }
+////                    }
+//                }
+////                else {
+////                    double[] data2nii = new double[sigLen];
+////                    data2nii = dataBruker.real.getColumn(0).toDoubleVector();
+//////                data2nii[1]  = dataBruker.imag.getColumn(0).toDoubleVector();
+////                    niftiHeader = new NiftiHeader(1, 1, 1, (int) data2nii.length);
+////                    niftiHeader.datatype = NiftiHeader.NIFTI_TYPE_FLOAT64;
+////                    volumeW = new NiftiVolume(niftiHeader);
+////                    INDArray PVM_VoxArrSize = bruker.getJcampdx().getMethod().getINDArray("PVM_VoxArrSize");
+////                    for (int i = 1; i < 4; i++) {
+////                        volumeW.header.pixdim[i] = PVM_VoxArrSize.getFloat(i - 1);
+////                    }
+////                    volumeW.header.pixdim[4] = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreExtent").getFloat(0)
+////                            / bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreSize").getFloat(0);
+////                    for (int i = 0; i < data2nii.length; i++) {
+//////                        volumeW.data.set(0, 0, 0, i, data2nii[i]);
+////                    }
+////
+////                }
+////                volumeW.header.scl_slope = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreDataSlope").getFloat(0);
+////                volumeW.header.scl_inter = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreDataOffs").getFloat(0);
+////
+////                volumeW.header.cal_max = bruker.getJcampdx().getVisu_pars().getFloat("VisuCoreDataMax");
+////                volumeW.header.cal_min = bruker.getJcampdx().getVisu_pars().getFloat("VisuCoreDataMin");
+////                volumeW.header.descrip = new StringBuffer("Converted by JBruker2nii API");
+//// to do affine matrix + 1r+1d + time
+//
+////            } else {
+////
+////                // if ( 3d and 4d )
+////                double[][][] CSI2nii = new double[(int) bruker.getDims()[1]][(int) bruker.getDims()[2]][(int) bruker.getDims()[0]];
+////                NiftiHeader header = new NiftiHeader((int) bruker.getDims()[1], (int) bruker.getDims()[1], 1, (int) bruker.getDims()[0]);
+////                header.datatype = NiftiHeader.NIFTI_TYPE_COMPLEX64;
+////                volumeW = new NiftiVolume(header);
+////
+////                INDArray VisuCoreExtent = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreExtent");
+////                INDArray VisuCoreSize = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreSize");
+////
+////                for (int i = 1; i < 3; i++) {
+////                    volumeW.header.pixdim[i] = VisuCoreExtent.getFloat(i) / VisuCoreSize.getFloat(i);
+////                }
+////                volumeW.header.pixdim[3] = bruker.getJcampdx().getVisu_pars().getFloat("VisuCoreFrameThickness");
+////                volumeW.header.pixdim[4] = VisuCoreExtent.getFloat(0) / VisuCoreSize.getFloat(0);
+////                ArrayList VisuCoreUnits = bruker.getJcampdx().getVisu_pars().getArrayList("VisuCoreUnits");
+////
+////                if (VisuCoreUnits.contains("[ppm]"))
+////                    volumeW.header.t_unit_code = NiftiHeader.NIFTI_UNITS_PPM;
+////                if (VisuCoreUnits.contains("mm"))
+////                    volumeW.header.xyz_unit_code = NiftiHeader.NIFTI_UNITS_MM;
+////                else if (VisuCoreUnits.contains("m"))
+////                    volumeW.header.xyz_unit_code = NiftiHeader.NIFTI_UNITS_METER;
+////
+////
+////                volumeW.header.intent_code = 2001; // each voxel has time_series
+////                double[] tempR;
+////                double[] tempI;
+////                for (int i = 0; i < bruker.getDims()[1]; i++) {
+////                    for (int j = 0; j < bruker.getDims()[2]; j=j+1) {
+////                        INDArrayIndex[] indx = {NDArrayIndex.all(), NDArrayIndex.point(i), NDArrayIndex.point(j)};
+////                        tempR = dataBruker.real.get(indx).toDoubleVector();
+////
+////                        for (int t = 0; t < bruker.getDims()[0]; t++) {
+//////                            volumeW.data.set(j, i, 0, t, tempR[t]);
+////                        }
+////
+////                    }
+////                }
+//
+//        } else if (bruker.isRaw()) {
+//            if (isSVS()) {
+//                int sigLen = bruker.getJcampdx().getVisu_pars().getINDArray("VisuAcqSize").getInt(0);
+//                double[] data2nii = new double[sigLen];
+//                int[] niftishape = new int[3 + bruker.getDims().length];
+//                int[] shape = Arrays.stream(bruker.getDims()).mapToInt(i -> (int) i).toArray();
+//                System.arraycopy(new int[]{1, 1, 1}, 0, niftishape, 0, 3);
+//                System.arraycopy(shape, 0, niftishape, 3, bruker.getDims().length);
+//
+//                niftiMRS = new NiftiMRS(niftishape);
+//                INDArray PVM_VoxArrSize = bruker.getJcampdx().getMethod().getINDArray("PVM_VoxArrSize");
+//                for (int i = 1; i < 4; i++) {
+//                    niftiMRS.getNifti().header.pixdim[i] = PVM_VoxArrSize.getFloat(i - 1);
+//                }
+//                // here pixdim 5 to 7 must be set
+//                niftiMRS.getNifti().header.pixdim[4] = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreExtent").getFloat(0)
+//                        / bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreSize").getFloat(0);
+//                ArrayList<int[]> idcs = new IndexIterator().iterate(Arrays.copyOfRange(shape, 1, shape.length));
+//                for (int[] idc : idcs) {
+//                    int[] idx = new int[niftishape.length];
+//                    System.arraycopy(idc, 0, idx, 4, idc.length);
+//                    for (int i = 0; i < shape[0]; i++) {
+//                        idx[3] = i;
+//                        idx[0] = 0;
+//                        int[] dataidx = Arrays.copyOfRange(idx, 3, idx.length);
+//                        niftiMRS.getNifti().data.set(idx, dataBruker.real.getFloat(dataidx));
+//                        idx[0] = 1;
+//                        niftiMRS.getNifti().data.set(idx, dataBruker.imag.getFloat(dataidx));
+//                    }
+//                }
+//                String NUCLEUS = bruker.getJcampdx().getAcqp().getString("NUCLEUS");
+//                if (NUCLEUS.contains("1H"))
+//                    niftiMRS.getJson().ResonantNucleus = new String[]{Nucleus.N_1H.toString()};
+//                Float TrnsFreq = bruker.getJcampdx().getAcqp().getFloat("SFO1");
+//                niftiMRS.getJson().SpectrometerFrequency = new Double[]{Double.valueOf(TrnsFreq)};
+////                volumeW.header.scl_slope = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreDataSlope").getFloat(0);
+////                volumeW.header.scl_inter = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreDataOffs").getFloat(0);
+//
+////                volumeW.header.cal_max = bruker.getJcampdx().getVisu_pars().getFloat("VisuCoreDataMax");
+////                volumeW.header.cal_min = bruker.getJcampdx().getVisu_pars().getFloat("VisuCoreDataMin");
+//                niftiMRS.getJson().setDim_5(DIM_KEYS.DIM_MEAS);
+//                niftiMRS.getJson().setDim_5_info("repetition");
+//                niftiMRS.getJson().setDim_5_header(TAGS.EchoTime, Collections.singletonList(bruker.getJcampdx().getTE(10000)));
+//                niftiMRS.getJson().setDim_5_header(TAGS.RepetitionTime, Collections.singletonList(bruker.getJcampdx().getTR(10000)));
+//
+//                niftiMRS.getNifti().header.descrip = new StringBuffer("Converted by JBruker2nii API");
+//// to do affine matrix + 1r+1d + time
+//            } else {
+//                // if ( 3d and 4d )
+////                double[][][] CSI2nii = new double[(int) bruker.getDims()[1]][(int) bruker.getDims()[2]][(int) bruker.getDims()[0]];
+////                NiftiHeader header = new NiftiHeader((int) bruker.getDims()[1], (int) bruker.getDims()[1], 1, (int) bruker.getDims()[0]);
+////                header.datatype = NiftiHeader.NIFTI_TYPE_COMPLEX64;
+////                volumeW = new NiftiVolume(header);
+////
+////                INDArray VisuCoreExtent = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreExtent");
+////                INDArray VisuCoreSize = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreSize");
+////
+////                for (int i = 1; i < 3; i++) {
+////                    volumeW.header.pixdim[i] = VisuCoreExtent.getFloat(i) / VisuCoreSize.getFloat(i);
+////                }
+////                volumeW.header.pixdim[3] = bruker.getJcampdx().getVisu_pars().getFloat("VisuCoreFrameThickness");
+////                volumeW.header.pixdim[4] = VisuCoreExtent.getFloat(0) / VisuCoreSize.getFloat(0);
+////                ArrayList VisuCoreUnits = bruker.getJcampdx().getVisu_pars().getArrayList("VisuCoreUnits");
+////
+////                if (VisuCoreUnits.contains("[ppm]"))
+////                    volumeW.header.t_unit_code = NiftiHeader.NIFTI_UNITS_PPM;
+////                if (VisuCoreUnits.contains("mm"))
+////                    volumeW.header.xyz_unit_code = NiftiHeader.NIFTI_UNITS_MM;
+////                else if (VisuCoreUnits.contains("m"))
+////                    volumeW.header.xyz_unit_code = NiftiHeader.NIFTI_UNITS_METER;
+////
+////
+////                volumeW.header.intent_code = 2001; // each voxel has time_series
+////                double[] tempR;
+////                double[] tempI;
+////                for (int i = 0; i < bruker.getDims()[1]; i++) {
+////                    for (int j = 0; j < 2*bruker.getDims()[2]; j=j+2) {
+////                        INDArrayIndex[] indx = {NDArrayIndex.all(), NDArrayIndex.point(i), NDArrayIndex.point(j/2)};
+////                        tempR = dataBruker.real.get(indx).toDoubleVector();
+////                        tempI = dataBruker.imag.get(indx).toDoubleVector();
+////                        for (int t = 0; t < bruker.getDims()[0]; t++) {
+//////                            volumeW.data.set(j, i, 0, t, tempR[t]);
+//////                            volumeW.data.set(j+1, i, 0, t, tempI[t]);
+////                        }
+////
+////                    }
+////                }}
+//            }
+//        }
+
+
+        }
 
     private boolean isSVS() {
         try {
