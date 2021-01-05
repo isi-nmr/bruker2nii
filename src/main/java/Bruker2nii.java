@@ -1,5 +1,6 @@
 import bruker_plugin_lib.Bruker;
 import bruker_plugin_lib.DataBruker;
+import com.ericbarnhill.niftijio.NiftiHeader;
 import com.ericbarnhill.niftijio.tools.IndexIterator;
 import org.apache.commons.lang3.ArrayUtils;
 import org.nd4j.linalg.api.ndarray.INDArray;
@@ -95,7 +96,58 @@ public class Bruker2nii {
             }
             niftiMRS.getNifti().header.descrip = new StringBuffer("Converted by JBruker2nii API");
         }
+        else {
+            int[] shape_nifti = new int[3 + 1];
+            int[] shape_bruker = Arrays.stream(bruker.getDims()).mapToInt(i -> (int) i).toArray();
+            shape_nifti[0] = shape_bruker[1];
+            shape_nifti[1] = shape_bruker[2];
+            if (shape_bruker.length == 4)
+                shape_nifti[2] = shape_bruker[3];
+            else
+                shape_nifti[2] = 1;
+            shape_nifti[3] = shape_bruker[0];
+            niftiMRS = new NiftiMRS(shape_nifti);
+            INDArray PVM_VoxArrSize = bruker.getJcampdx().getMethod().getINDArray("PVM_VoxArrSize");
+            INDArray VisuCoreExtent = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreExtent");
+            INDArray VisuCoreSize = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreSize");
+            for (int i = 1; i < 3; i++) {
+                niftiMRS.getNifti().header.pixdim[i] = VisuCoreExtent.getFloat(i) / VisuCoreSize.getFloat(i);
+            }
+            niftiMRS.getNifti().header.pixdim[3] = bruker.getJcampdx().getVisu_pars().getFloat("VisuCoreFrameThickness");
+            niftiMRS.getNifti().header.pixdim[4] = VisuCoreExtent.getFloat(0) / VisuCoreSize.getFloat(0);
+            ArrayList VisuCoreUnits = bruker.getJcampdx().getVisu_pars().getArrayList("VisuCoreUnits");
+            double[][][] CSI2nii = new double[(int) bruker.getDims()[1]][(int) bruker.getDims()[2]][(int) bruker.getDims()[0]];
+            NiftiHeader header = new NiftiHeader((int) bruker.getDims()[1], (int) bruker.getDims()[1], 1, (int) bruker.getDims()[0]);
+            niftiMRS.getNifti().header.t_unit_code = NiftiHeader.NIFTI_UNITS_SEC;
+            if (VisuCoreUnits.contains("mm"))
+                niftiMRS.getNifti().header.xyz_unit_code = NiftiHeader.NIFTI_UNITS_MM;
+            else if (VisuCoreUnits.contains("m"))
+                niftiMRS.getNifti().header.xyz_unit_code = NiftiHeader.NIFTI_UNITS_METER;
 
+                for (int i = 0; i < bruker.getDims()[1]; i++) {
+                    for (int j = 0; j < bruker.getDims()[2]; j++) {
+                        INDArrayIndex[] indx = {NDArrayIndex.all(), NDArrayIndex.point(i), NDArrayIndex.point(j/2)};
+                        double[] tempR = dataBruker.real.get(indx).toDoubleVector();
+                        double[] tempI = dataBruker.imag.get(indx).toDoubleVector();
+                        int[] idx = new int[]{i, j, 0, 0};
+                        for (int t = 0; t < bruker.getDims()[0]; t++) {
+                            idx[3] = t;
+                            idx[0] = 0;
+                            niftiMRS.getNifti().data.set(idx, tempR[t]);
+                            idx[0] = 1;
+                            niftiMRS.getNifti().data.set(idx, tempI[t]);
+
+                        }
+
+                    }
+                }
+            String NUCLEUS = bruker.getJcampdx().getAcqp().getString("NUCLEUS");
+            if (NUCLEUS.contains("1H"))
+                niftiMRS.getJson().ResonantNucleus = new String[]{Nucleus.N_1H.toString()};
+            Float TrnsFreq = bruker.getJcampdx().getAcqp().getFloat("SFO1");
+            niftiMRS.getJson().SpectrometerFrequency = new Double[]{Double.valueOf(TrnsFreq)};
+            niftiMRS.getNifti().header.descrip = new StringBuffer("Converted by JBruker2nii API");
+            }
         try {
             niftiMRS.write(pathNii, b, b1);
         } catch (IOException e) {
@@ -369,7 +421,8 @@ public class Bruker2nii {
 
     private boolean isSVS() {
         try {
-            if (bruker.getJcampdx().getVisu_pars().getString("VisuCoreDimDesc").equals("spectroscopic")) {
+            if (bruker.getJcampdx().getVisu_pars().getArrayList("VisuCoreDimDesc")
+                    .equals(new ArrayList() {{add("spectroscopic");}})) {
                 return true;
             }
         } catch (Exception e) {

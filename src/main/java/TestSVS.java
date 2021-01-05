@@ -2,8 +2,8 @@ import java.io.IOException;
 
 public class TestSVS {
     public static void main(String[] args) throws IOException {
-//        Bruker2nii bruker2nii = new Bruker2nii("D:\\test fid-a\\FID-A\\exampleData\\Bruker\\sample01_press\\press\\pdata\\1\\1r");
-        Bruker2nii bruker2nii = new Bruker2nii("D:\\DATA SETs\\for test Jbruker\\20200612_094625_lego_phantom_3_1_2\\35\\fid");
+        Bruker2nii bruker2nii = new Bruker2nii("D:\\test fid-a\\FID-A\\exampleData\\Bruker\\sample01_press\\press\\pdata\\1\\1r");
+//        Bruker2nii bruker2nii = new Bruker2nii("D:\\DATA SETs\\for test Jbruker\\20200612_094625_lego_phantom_3_1_2\\35\\fid");
 //        Bruker2nii bruker2nii = new Bruker2nii("D:\\DATA SETs\\SSY-059 ZS, JS, IP, AS\\data\\phantom_IP_AS\\20200520_151057_phantomNAA_pH_7_2_1_2\\5\\fid");
 
         bruker2nii.convert("testSVS2", 'f', true,false);
