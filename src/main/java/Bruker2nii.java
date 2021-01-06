@@ -1,5 +1,6 @@
 import bruker_plugin_lib.Bruker;
 import bruker_plugin_lib.DataBruker;
+import checkers.units.quals.A;
 import com.ericbarnhill.niftijio.NiftiHeader;
 import com.ericbarnhill.niftijio.tools.IndexIterator;
 import org.apache.commons.lang3.ArrayUtils;
@@ -17,6 +18,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.IntStream;
 
+import static org.nd4j.linalg.ops.transforms.Transforms.sqrt;
+import static org.nd4j.linalg.ops.transforms.Transforms.*;
 public class Bruker2nii {
     String pathBruker;
     String pathNii;
@@ -97,6 +100,7 @@ public class Bruker2nii {
             niftiMRS.getNifti().header.descrip = new StringBuffer("Converted by JBruker2nii API");
         }
         else {
+
             int[] shape_nifti = new int[3 + 1];
             int[] shape_bruker = Arrays.stream(bruker.getDims()).mapToInt(i -> (int) i).toArray();
             shape_nifti[0] = shape_bruker[1];
@@ -141,6 +145,28 @@ public class Bruker2nii {
 
                     }
                 }
+
+            INDArray affine_mat = getAffineMat();
+            // if sample upside down
+            //            q mat
+            INDArray transpos = affine_mat.get(new INDArrayIndex[]{NDArrayIndex.interval(0, 3), NDArrayIndex.point(3)});
+            INDArray RZS = affine_mat.get(new INDArrayIndex[]{NDArrayIndex.interval(0, 3), NDArrayIndex.interval(0, 3)});
+            INDArray zoom = sqrt(RZS.mul(RZS).sum(0));
+            INDArray rotate = RZS.divRowVector(zoom);
+            // qfactor
+//            int nRows = rotate.rows();
+//            int nColumns = rotate.columns();
+//            INDArray S = Nd4j.zeros(1, nRows);
+//            INDArray U = Nd4j.zeros(nRows, nRows);
+//            INDArray V = Nd4j.zeros(nColumns, nColumns);
+//            Nd4j.getBlasWrapper().lapack().gesvd(rotate, S, U, V);
+//            INDArray PR = U.mmul(V);
+//            // error proning
+//            PR.reshape(new int[]{1,9});
+//          s mat
+            niftiMRS.getNifti().header.srow_x = affine_mat.getRow(0).toFloatVector();
+            niftiMRS.getNifti().header.srow_y = affine_mat.getRow(1).toFloatVector();
+            niftiMRS.getNifti().header.srow_z = affine_mat.getRow(2).toFloatVector();
             String NUCLEUS = bruker.getJcampdx().getAcqp().getString("NUCLEUS");
             if (NUCLEUS.contains("1H"))
                 niftiMRS.getJson().ResonantNucleus = new String[]{Nucleus.N_1H.toString()};
@@ -431,8 +457,18 @@ public class Bruker2nii {
     }
 
     private INDArray getAffineMat() {
-        INDArray visuCoreSize = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreSize");
-        INDArray visuCoreExtent = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreExtent");
+        // if it is CSI
+
+        INDArray visuCoreSize = null;
+        INDArray visuCoreExtent = null;
+        if (!bruker.isImage()) {
+            visuCoreSize = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreSize").get(NDArrayIndex.interval(1, 3));
+            visuCoreExtent = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreExtent").get(NDArrayIndex.interval(1, 3));
+        } else if (bruker.isImage()) {// if it is Image
+        visuCoreSize = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreSize");
+        visuCoreExtent = bruker.getJcampdx().getVisu_pars().getINDArray("VisuCoreExtent");
+        }
+        // null checking
         INDArray resolution = visuCoreExtent.div(visuCoreSize);
         double VisuCoreFrameThickness = bruker.getJcampdx().getVisu_pars().getFloat("VisuCoreFrameThickness");
 //        INDArray spatialResolution = Nd4j.append(resolution.get(NDArrayIndex.interval(1, 3)), 1, VisuCoreFrameThickness, -1);
