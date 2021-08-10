@@ -19,6 +19,12 @@
             </plugin>
         </plugins>
     </build>
-
+    <dependencies>
+        <dependency>
+            <groupId>com.JBruker</groupId>
+            <artifactId>JBruker</artifactId>
+            <version>1.0</version>
+        </dependency>
+    </dependencies>
 
 </project>

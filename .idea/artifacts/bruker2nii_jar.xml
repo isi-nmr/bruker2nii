@@ -1,0 +1,9 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="bruker2nii:jar">
+    <output-path>$PROJECT_DIR$/out/artifacts/bruker2nii_jar</output-path>
+    <root id="archive" name="bruker2nii.jar">
+      <element id="module-output" name="bruker2nii" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/../../forBern/NIfTI-MRS/out/artifacts/NIfTI_MRS_jar/NIfTI-MRS.jar" path-in-jar="/" />
+    </root>
+  </artifact>
+</component>
